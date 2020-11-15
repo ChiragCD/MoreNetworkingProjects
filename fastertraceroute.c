@@ -39,14 +39,14 @@ int		 verbose;
 
 			/* function prototypes */
 const char	*icmpcode_v4(int);
-void		 recv_v4(void);
+void*		 recv_v4(void*);
 void	 sig_alrm(int);
 void	 traceloop(void);
 void	 tv_sub(struct timeval *, struct timeval *);
 
 struct proto {
   const char	*(*icmpcode)(int);
-  int	 (*recv)(int, struct timeval *);
+  void*	 (*recv)(void*);
   struct sockaddr  *sasend;	/* sockaddr{} for send, from getaddrinfo */
   struct sockaddr  *sarecv;	/* sockaddr{} for receiving */
   struct sockaddr  *salast;	/* last sockaddr{} for receiving */
@@ -67,9 +67,9 @@ void sig_alrm(int signo)
 struct proto	proto_v4 = { icmpcode_v4, recv_v4, NULL, NULL, NULL, NULL, 0,IPPROTO_ICMP, IPPROTO_IP, IP_TTL };
 
 int		datalen = sizeof(struct rec);	/* defaults */
-int		max_ttl = 30;
+int		max_ttl = 10;
 int		nprobes = 1;
-u_short	dport = 32768 + 555;
+u_short	dport = 32768 + 666;
 pthread_mutex_t send_lock; 
 struct addrinfo * host_serv(const char *host, const char *serv, int family, int socktype)
 {
@@ -118,7 +118,7 @@ icmpcode_v4(int code)
 	}
 }
 
-void recv_v4(void)
+void* recv_v4(void* arg)
 {
 	int				hlen1, hlen2, icmplen, ret;
 	socklen_t		len;
@@ -129,7 +129,7 @@ void recv_v4(void)
 
 	gotalarm = 0;
     struct timeval tout;
-    tout.tv_sec = 5;
+    tout.tv_sec = 10;
     tout.tv_usec = 0;
     setsockopt(recvfd, SOL_SOCKET, SO_RCVTIMEO, &tout, sizeof(tout)); 
 
@@ -157,7 +157,6 @@ void recv_v4(void)
 			continue;				/* not enough to look at ICMP header */
 		icmp = (struct icmp *) (recvbuf + hlen1); /* start of ICMP header */
         if (icmp->icmp_type == ICMP_UNREACH) {
-                printf("INSIDE\n");
              if (icmplen < 8 + sizeof(struct ip))
                  continue;           /* not enough data to look at inner IP */
              hip = (struct ip *) (recvbuf + hlen1 + 8);
@@ -167,7 +166,6 @@ void recv_v4(void)
 
              udp = (struct udphdr *) (recvbuf + hlen1 + 8 + hlen2);
              char	str[NI_MAXHOST];
-             printf("ABUOT TO \n");
             if (getnameinfo(pr->sarecv, pr->salen, str, sizeof(str),NULL, 0, 0) == 0){
                 char tmp[128];
                 struct sockaddr_in* sa_tmp;
@@ -193,7 +191,6 @@ void recv_v4(void)
         udp = (struct udphdr *) (recvbuf + hlen1 + 8 + hlen2);
         struct rec *resp = (struct rec*) (recvbuf + hlen1 + hlen2 + 8 + sizeof(struct udphdr));
         // datalen is size of rec structure which contains seq, ttl, and timeval
-        j++;
         char	str[NI_MAXHOST];
         if (getnameinfo(pr->sarecv, pr->salen, str, sizeof(str),NULL, 0, 0) == 0){
             char tmp[128];
@@ -205,7 +202,7 @@ void recv_v4(void)
 }
 }
 
-void trace(void)
+void* trace(void* arg)
 {
 	int					seq, code, done;
 	double				rtt;
@@ -224,16 +221,19 @@ void trace(void)
 	bind(sendfd, pr->sabind, pr->salen); // finally bind the socket for sending with the details specified in sabind (sockaddr_in bind)
 
     pthread_mutex_lock(&send_lock);
-    rec = (struct rec *) sendbuf; // cast sendbuf (char*) to (struct rec*)
-    rec->rec_seq = ++seq;         // increment the sequence number
-    rec->rec_ttl = ++ttl;           // set the ttl
-    gettimeofday(&rec->rec_tv, NULL); // set the current time
-    setsockopt(sendfd, pr->ttllevel, pr->ttloptname, &ttl, sizeof(int)); // specify the ttl here
-    bzero(pr->salast, pr->salen);
-    ((struct sockaddr_in*)(pr->sasend))->sin_port = htons(dport + ttl);    // assign the sending socket port as dport + seq
-    //sock_set_port(pr->sasend, pr->salen, htons(dport + seq));
-    sendto(sendfd, sendbuf, datalen, 0, pr->sasend, pr->salen); // send udp msg
-    pthread_mutex_unlock(&send_lock);
+    ttl++;
+    for(int i=0; i<nprobes;i++){
+        rec = (struct rec *) sendbuf; // cast sendbuf (char*) to (struct rec*)
+        rec->rec_seq = ++seq;         // increment the sequence number
+        rec->rec_ttl = ttl;           // set the ttl
+        gettimeofday(&rec->rec_tv, NULL); // set the current time
+        setsockopt(sendfd, pr->ttllevel, pr->ttloptname, &ttl, sizeof(int)); // specify the ttl here
+        bzero(pr->salast, pr->salen);
+        ((struct sockaddr_in*)(pr->sasend))->sin_port = htons(dport + ttl);    // assign the sending socket port as dport + seq
+        //sock_set_port(pr->sasend, pr->salen, htons(dport + seq));
+        sendto(sendfd, sendbuf, datalen, 0, pr->sasend, pr->salen); // send udp msg
+        pthread_mutex_unlock(&send_lock);
+    }
 }
 int main(int argc, char* argv[]){
         struct addrinfo *ai;
@@ -273,6 +273,5 @@ int main(int argc, char* argv[]){
     pthread_join(tid,NULL);
 	exit(0);
 }
-
 
 
