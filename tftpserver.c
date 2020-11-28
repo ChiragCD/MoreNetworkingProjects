@@ -105,7 +105,6 @@ int send_data(int sock_fd, int received_ack) {
 }
 
 void start(int port) {
-    printf("Hello World!\n");
     int listenfd = socket( AF_INET, SOCK_DGRAM,0);
     struct sockaddr_in serv_addr;
     bzero(&serv_addr, sizeof(struct sockaddr_in));
@@ -150,7 +149,7 @@ void start(int port) {
                 strcpy(mode, rrq + file_len+3);
                 printf("THe mode of transfer is %s\n", mode);
                 if(strcmp(mode, "octet") && strcmp(mode, "binary")){ // check if the mode is supported
-                        printf("The requested mode is %s but this server does not support it\n", rrq+file_len+2);
+                        printf("The requested mode is %s but this server does not support it\n", mode);
                         FD_SET(listenfd, &rset);
                         continue;
                 }
