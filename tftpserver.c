@@ -88,6 +88,8 @@ int send_data(int sock_fd, int received_ack) {
 
 	relevant->num_retransmits = 0;
 	(relevant->last_chunk_sent)++;
+        send_buf[2] = (relevant->last_chunk_sent / 256);
+        send_buf[3] = (relevant->last_chunk_sent % 256);
 	send_length = get(relevant->file_name, relevant->last_chunk_sent, send_buf+4);
         if(send_length == -2) {
                 send_buf[0] = 0;
